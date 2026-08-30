@@ -49,17 +49,27 @@ function nextLink(header) {
   for (const part of String(header || '').split(',')) { const m = part.match(/<([^>]+)>;\s*rel="next"/); if (m) return m[1]; }
   return null;
 }
-async function getWithRetry(request, url, attempts = 3) {
+async function getWithRetry(request, url, attempts = 2) {
   let last;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      const response = await request.get(url, { timeout: 15000 });
+      const response = await request.get(url, { timeout: 10000 });
       if (response.status() < 500) return response;
       last = new Error(`HTTP ${response.status()} ${response.statusText()}`);
     } catch (error) { last = error; }
     if (attempt < attempts) await new Promise(resolve => setTimeout(resolve, 750 * attempt));
   }
   throw last;
+}
+async function mapLimit(items, limit, worker) {
+  let next = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
 }
 async function pages(request, url) {
   const result = [];
@@ -113,6 +123,7 @@ async function main() {
       fs.mkdirSync(courseDir, { recursive: true });
       log(`Course: ${course.name}`);
       const found = new Map();
+      const fallbackRoutes = new Set();
       const add = (url, label, section = 'Course files') => {
         if (!url) return;
         try { url = new URL(url, BASE).href; } catch { return; }
@@ -128,19 +139,22 @@ async function main() {
         if (obj.html_url) add(obj.html_url, obj.display_name || obj.filename || obj.title, section);
         Object.values(obj).forEach(v => scanObject(v, section));
       };
-      const tryEndpoint = async (url, section, detailPages) => {
+      const tryEndpoint = async (url, section, route, detailPages) => {
         try {
           const items = await pages(context.request, url);
           scanObject(items, section);
-          if (detailPages) for (const item of items) {
+          if (detailPages) await mapLimit(items, 4, async item => {
             try { const r = await getWithRetry(context.request, detailPages(item)); if (r.ok()) scanObject(await r.json(), section); } catch {}
-          }
-        } catch (e) { log(`  Source unavailable; falling back: ${section} (${shortError(e)})`); }
+          });
+        } catch (e) {
+          fallbackRoutes.add(route);
+          log(`  Source unavailable; falling back: ${section} (${shortError(e)})`);
+        }
       };
 
-      try {
+      const scanModules = async () => { try {
         const modules = await pages(context.request, `${BASE}/api/v1/courses/${course.id}/modules?include[]=items&per_page=100`);
-        for (const module of modules) {
+        await mapLimit(modules, 4, async module => {
           let items = module.items;
           if (!Array.isArray(items)) items = await pages(context.request, module.items_url || `${BASE}/api/v1/courses/${course.id}/modules/${module.id}/items?per_page=100`);
           const moduleFolder = safeName(module.name || `Module ${module.id}`);
@@ -148,13 +162,19 @@ async function main() {
             if (item.type === 'File' && item.content_id) add(`${BASE}/api/v1/files/${item.content_id}`, item.title, moduleFolder);
             scanObject(item, moduleFolder);
           }
-        }
-      } catch (e) { log(`  Source unavailable; falling back: Modules (${shortError(e)})`); }
-      await tryEndpoint(`${BASE}/api/v1/courses/${course.id}/assignments?per_page=100`, 'Assignments');
-      await tryEndpoint(`${BASE}/api/v1/courses/${course.id}/pages?per_page=100`, 'Pages', p => `${BASE}/api/v1/courses/${course.id}/pages/${encodeURIComponent(p.url)}`);
-      await tryEndpoint(`${BASE}/api/v1/courses/${course.id}/discussion_topics?per_page=100`, 'Announcements and discussions');
+        });
+      } catch (e) {
+        fallbackRoutes.add('modules');
+        log(`  Source unavailable; falling back: Modules (${shortError(e)})`);
+      }};
+      await Promise.all([
+        scanModules(),
+        tryEndpoint(`${BASE}/api/v1/courses/${course.id}/assignments?per_page=100`, 'Assignments', 'assignments'),
+        tryEndpoint(`${BASE}/api/v1/courses/${course.id}/pages?per_page=100`, 'Pages', 'pages', p => `${BASE}/api/v1/courses/${course.id}/pages/${encodeURIComponent(p.url)}`),
+        tryEndpoint(`${BASE}/api/v1/courses/${course.id}/discussion_topics?per_page=100`, 'Announcements and discussions', 'announcements')
+      ]);
 
-      for (const route of ['modules', 'assignments', 'pages', 'announcements']) {
+      for (const route of fallbackRoutes) {
         try {
           await page.goto(`${BASE}/courses/${course.id}/${route}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await page.waitForTimeout(1200);
@@ -164,28 +184,37 @@ async function main() {
       }
 
       log(`  ${found.size} unique file(s) discovered`);
-      for (const item of found.values()) {
+      await mapLimit([...found.values()], 4, async item => {
         try {
           let meta = null;
           const mr = await getWithRetry(context.request, `${BASE}/api/v1/files/${item.id}`);
           if (mr.ok()) meta = await mr.json();
+          const name = safeName(meta?.display_name || item.label || `file-${item.id}`);
+          const targetDir = path.join(courseDir, safeName(item.section));
+          fs.mkdirSync(targetDir, { recursive: true });
+          const target = path.join(targetDir, name);
+          const key = `${course.id}:${item.id}`;
+          const metaStamp = meta ? `${meta.updated_at || ''}|${meta.size || ''}` : null;
+          if (metaStamp && fs.existsSync(target) && manifest[key] === metaStamp) { skipped++; return; }
+          if (metaStamp && manifest[key] && fs.existsSync(target) && fs.statSync(target).size === Number(meta.size)) {
+            manifest[key] = metaStamp;
+            fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2), 'utf8');
+            skipped++;
+            return;
+          }
           const downloadUrl = meta?.url || `${BASE}/files/${item.id}/download?download_frd=1`;
           const response = await getWithRetry(context.request, downloadUrl);
           if (!response.ok()) throw new Error(`HTTP ${response.status()} ${response.statusText()}`);
           const headers = response.headers();
-          const name = filenameFromHeaders(headers, meta?.display_name || item.label || `file-${item.id}`);
-          const targetDir = path.join(courseDir, safeName(item.section));
-          fs.mkdirSync(targetDir, { recursive: true });
-          const target = path.join(targetDir, name);
-          const stamp = `${headers.etag || ''}|${headers['last-modified'] || ''}|${headers['content-length'] || ''}`;
-          const key = `${course.id}:${item.id}`;
-          if (fs.existsSync(target) && stamp !== '||' && manifest[key] === stamp) { skipped++; continue; }
-          fs.writeFileSync(target, await response.body()); manifest[key] = stamp;
+          const finalName = filenameFromHeaders(headers, name);
+          const finalTarget = path.join(targetDir, finalName);
+          const stamp = metaStamp || `${headers.etag || ''}|${headers['last-modified'] || ''}|${headers['content-length'] || ''}`;
+          fs.writeFileSync(finalTarget, await response.body()); manifest[key] = stamp;
           fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2), 'utf8');
           downloaded++;
-          log(`  Downloaded: ${name}`);
+          log(`  Downloaded: ${finalName}`);
         } catch (e) { failed++; log(`  File failed ${item.id}: ${shortError(e)}`); }
-      }
+      });
       progress(courseIndex + 1, courses.length);
     }
     fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2), 'utf8');
