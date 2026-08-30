@@ -10,7 +10,7 @@ const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath
 const expand = value => String(value).replace(/%USERPROFILE%/gi, os.homedir());
 const BASE = String(config.canvasUrl || 'https://canvas.polyu.edu.hk').replace(/\/$/, '');
 const DOWNLOAD_ROOT = path.resolve(expand(config.downloadDirectory || path.join(os.homedir(), 'Desktop', 'PolyU Canvas Courses')));
-const STATE_ROOT = path.join(process.env.LOCALAPPDATA || os.homedir(), 'CanvasCourseDownloader');
+const STATE_ROOT = path.join(process.env.LOCALAPPDATA || os.homedir(), 'PolyUCanvasCourseFetch');
 const LEGACY_PROFILE = path.join(DOWNLOAD_ROOT, '.browser-profile');
 const PROFILE = fs.existsSync(LEGACY_PROFILE) ? LEGACY_PROFILE : path.join(STATE_ROOT, 'browser-profile');
 const MANIFEST_FILE = path.join(DOWNLOAD_ROOT, '.canvas-sync-manifest.json');
@@ -89,28 +89,28 @@ async function main() {
     await page.goto(`${BASE}/courses`, { waitUntil: 'domcontentloaded' });
     let auth = await getWithRetry(context.request, `${BASE}/api/v1/users/self`);
     if (!auth.ok()) {
-      console.log('请在打开的 Chrome 中登录 Canvas。');
-      await enter('登录后回到此窗口按 Enter：');
+      console.log('Please sign in to Canvas in the Chrome window.');
+      await enter('When the course page is visible, return here and press Enter: ');
       auth = await getWithRetry(context.request, `${BASE}/api/v1/users/self`);
-      if (!auth.ok()) throw new Error('未检测到有效登录。');
+      if (!auth.ok()) throw new Error('No valid Canvas session was detected.');
     }
 
     let manifest = {};
     try { manifest = JSON.parse(fs.readFileSync(MANIFEST_FILE, 'utf8')); } catch {}
     const courses = (await pages(context.request, `${BASE}/api/v1/courses?per_page=100`)).filter(c => c.name && !c.access_restricted_by_date);
     let downloaded = 0, skipped = 0, failed = 0;
-    log(`同步开始，共 ${courses.length} 门可访问课程`);
+    log(`Sync started: ${courses.length} accessible course(s)`);
 
     for (const course of courses) {
       const courseDir = path.join(DOWNLOAD_ROOT, safeName(course.name));
       fs.mkdirSync(courseDir, { recursive: true });
-      log(`课程：${course.name}`);
+      log(`Course: ${course.name}`);
       const found = new Map();
       const add = (url, label, section = 'Course files') => {
         if (!url) return;
         try { url = new URL(url, BASE).href; } catch { return; }
         const id = fileId(url); if (!id || !url.startsWith(BASE)) return;
-        found.set(id, { id, url, label: label || `file-${id}`, section });
+        if (!found.has(id)) found.set(id, { id, url, label: label || `file-${id}`, section });
       };
       const scanObject = (obj, section) => {
         if (!obj) return;
@@ -128,10 +128,21 @@ async function main() {
           if (detailPages) for (const item of items) {
             try { const r = await getWithRetry(context.request, detailPages(item)); if (r.ok()) scanObject(await r.json(), section); } catch {}
           }
-        } catch (e) { log(`  路径受限，已降级：${section} (${shortError(e)})`); }
+        } catch (e) { log(`  Source unavailable; falling back: ${section} (${shortError(e)})`); }
       };
 
-      await tryEndpoint(`${BASE}/api/v1/courses/${course.id}/modules?include[]=items&per_page=100`, 'Modules');
+      try {
+        const modules = await pages(context.request, `${BASE}/api/v1/courses/${course.id}/modules?include[]=items&per_page=100`);
+        for (const module of modules) {
+          let items = module.items;
+          if (!Array.isArray(items)) items = await pages(context.request, module.items_url || `${BASE}/api/v1/courses/${course.id}/modules/${module.id}/items?per_page=100`);
+          const moduleFolder = safeName(module.name || `Module ${module.id}`);
+          for (const item of items) {
+            if (item.type === 'File' && item.content_id) add(`${BASE}/api/v1/files/${item.content_id}`, item.title, moduleFolder);
+            scanObject(item, moduleFolder);
+          }
+        }
+      } catch (e) { log(`  Source unavailable; falling back: Modules (${shortError(e)})`); }
       await tryEndpoint(`${BASE}/api/v1/courses/${course.id}/assignments?per_page=100`, 'Assignments');
       await tryEndpoint(`${BASE}/api/v1/courses/${course.id}/pages?per_page=100`, 'Pages', p => `${BASE}/api/v1/courses/${course.id}/pages/${encodeURIComponent(p.url)}`);
       await tryEndpoint(`${BASE}/api/v1/courses/${course.id}/discussion_topics?per_page=100`, 'Announcements and discussions');
@@ -162,13 +173,13 @@ async function main() {
           const key = `${course.id}:${item.id}`;
           if (fs.existsSync(target) && stamp !== '||' && manifest[key] === stamp) { skipped++; continue; }
           fs.writeFileSync(target, await response.body()); manifest[key] = stamp; downloaded++;
-          log(`  已下载：${name}`);
-        } catch (e) { failed++; log(`  文件失败 ${item.id}：${shortError(e)}`); }
+          log(`  Downloaded: ${name}`);
+        } catch (e) { failed++; log(`  File failed ${item.id}: ${shortError(e)}`); }
       }
     }
     fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2), 'utf8');
-    log(`同步完成：下载/更新 ${downloaded}，跳过 ${skipped}，失败 ${failed}`);
+    log(`Sync complete: ${downloaded} downloaded/updated, ${skipped} skipped, ${failed} failed`);
   } finally { await context.close(); }
 }
 
-main().catch(error => { log(`同步中止：${shortError(error)}`); process.exitCode = 1; });
+main().catch(error => { log(`Sync aborted: ${shortError(error)}`); process.exitCode = 1; });

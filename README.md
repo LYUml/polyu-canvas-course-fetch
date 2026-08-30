@@ -1,4 +1,4 @@
-# Canvas Course Downloader
+# PolyU Canvas Course Fetch
 
 Download course files visible to your own Canvas account without creating an API token.
 
