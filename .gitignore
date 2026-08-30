@@ -1,6 +1,7 @@
 node_modules/
 config.json
 downloads/
+# Per-user course content (never commit)
 courses/
 *.log
 .canvas-sync-manifest.json

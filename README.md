@@ -21,6 +21,8 @@ It never bypasses Canvas permissions. Locked, unpublished, external-tool, DRM-pr
 
 Files are saved inside the repository's `courses` folder by default. This folder contains only one folder per course and its materials. Copy `config.example.json` to `config.json` to change the Canvas URL or destination.
 
+The `courses` folder is generated locally for each user and is excluded from Git. Course materials must never be committed or distributed through this repository.
+
 ## Privacy
 
 The reusable browser profile is stored under the current user's local application-data directory and is never placed in this repository. Do not share that profile. The tool does not ask for passwords or transmit cookies, course content, or analytics to the developer.
