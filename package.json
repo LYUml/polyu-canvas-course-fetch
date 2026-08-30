@@ -1,0 +1,9 @@
+{
+  "name": "canvas-course-downloader",
+  "version": "1.0.0",
+  "description": "Download all Canvas course materials visible to the signed-in user, without an API token.",
+  "main": "src/index.js",
+  "scripts": { "start": "node src/index.js", "check": "node --check src/index.js" },
+  "license": "MIT",
+  "dependencies": { "playwright-core": "^1.55.0" }
+}

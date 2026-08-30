@@ -1,0 +1,7 @@
+node_modules/
+config.json
+downloads/
+*.log
+.canvas-sync-manifest.json
+.DS_Store
+Thumbs.db
