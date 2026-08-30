@@ -21,6 +21,16 @@ It never bypasses Canvas permissions. Locked, unpublished, external-tool, DRM-pr
 
 Files are saved inside the repository's `courses` folder by default. This folder contains only one folder per course and its materials. Copy `config.example.json` to `config.json` to change the Canvas URL or destination.
 
+## macOS quick start
+
+1. Install [Node.js](https://nodejs.org/) and Google Chrome.
+2. Download or clone this repository.
+3. In Finder, double-click `fetch.command`.
+4. If macOS blocks the first launch, right-click `fetch.command`, choose **Open**, and confirm.
+5. On the first run, sign in to Canvas in Chrome, then return to Terminal and press Enter.
+
+If the file is not executable after downloading an archive, run `chmod +x fetch.command` once in Terminal.
+
 The `courses` folder is generated locally for each user and is excluded from Git. Course materials must never be committed or distributed through this repository.
 
 ## Privacy
