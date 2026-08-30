@@ -1,4 +1,4 @@
 {
   "canvasUrl": "https://canvas.polyu.edu.hk",
-  "downloadDirectory": "%USERPROFILE%\\Desktop\\PolyU Canvas Courses"
+  "downloadDirectory": "courses"
 }

@@ -1,6 +1,7 @@
 node_modules/
 config.json
 downloads/
+courses/
 *.log
 .canvas-sync-manifest.json
 .DS_Store

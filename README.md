@@ -16,10 +16,10 @@ It never bypasses Canvas permissions. Locked, unpublished, external-tool, DRM-pr
 
 1. Install [Node.js](https://nodejs.org/) and Google Chrome.
 2. Download or clone this repository.
-3. Double-click `run-windows.bat`.
+3. Double-click `fetch.bat`.
 4. On the first run, sign in to Canvas in the Chrome window, then return to the terminal and press Enter.
 
-Files are saved to `Desktop\PolyU Canvas Courses` by default. Copy `config.example.json` to `config.json` to change the Canvas URL or destination.
+Files are saved inside the repository's `courses` folder by default. This folder contains only one folder per course and its materials. Copy `config.example.json` to `config.json` to change the Canvas URL or destination.
 
 ## Privacy
 

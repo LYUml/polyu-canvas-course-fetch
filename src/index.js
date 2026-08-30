@@ -9,12 +9,11 @@ const configPath = path.join(ROOT, 'config.json');
 const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
 const expand = value => String(value).replace(/%USERPROFILE%/gi, os.homedir());
 const BASE = String(config.canvasUrl || 'https://canvas.polyu.edu.hk').replace(/\/$/, '');
-const DOWNLOAD_ROOT = path.resolve(expand(config.downloadDirectory || path.join(os.homedir(), 'Desktop', 'PolyU Canvas Courses')));
+const DOWNLOAD_ROOT = path.resolve(expand(config.downloadDirectory || path.join(ROOT, 'courses')));
 const STATE_ROOT = path.join(process.env.LOCALAPPDATA || os.homedir(), 'PolyUCanvasCourseFetch');
-const LEGACY_PROFILE = path.join(DOWNLOAD_ROOT, '.browser-profile');
-const PROFILE = fs.existsSync(LEGACY_PROFILE) ? LEGACY_PROFILE : path.join(STATE_ROOT, 'browser-profile');
-const MANIFEST_FILE = path.join(DOWNLOAD_ROOT, '.canvas-sync-manifest.json');
-const LOG_FILE = path.join(DOWNLOAD_ROOT, 'sync.log');
+const PROFILE = path.join(STATE_ROOT, 'browser-profile');
+const MANIFEST_FILE = path.join(STATE_ROOT, 'manifest.json');
+const LOG_FILE = path.join(STATE_ROOT, 'fetch.log');
 
 fs.mkdirSync(DOWNLOAD_ROOT, { recursive: true });
 fs.mkdirSync(STATE_ROOT, { recursive: true });
@@ -47,7 +46,7 @@ async function getWithRetry(request, url, attempts = 3) {
   let last;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      const response = await request.get(url);
+      const response = await request.get(url, { timeout: 15000 });
       if (response.status() < 500) return response;
       last = new Error(`HTTP ${response.status()} ${response.statusText()}`);
     } catch (error) { last = error; }
@@ -156,6 +155,7 @@ async function main() {
         } catch {}
       }
 
+      log(`  ${found.size} unique file(s) discovered`);
       for (const item of found.values()) {
         try {
           let meta = null;
@@ -172,7 +172,9 @@ async function main() {
           const stamp = `${headers.etag || ''}|${headers['last-modified'] || ''}|${headers['content-length'] || ''}`;
           const key = `${course.id}:${item.id}`;
           if (fs.existsSync(target) && stamp !== '||' && manifest[key] === stamp) { skipped++; continue; }
-          fs.writeFileSync(target, await response.body()); manifest[key] = stamp; downloaded++;
+          fs.writeFileSync(target, await response.body()); manifest[key] = stamp;
+          fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2), 'utf8');
+          downloaded++;
           log(`  Downloaded: ${name}`);
         } catch (e) { failed++; log(`  File failed ${item.id}: ${shortError(e)}`); }
       }
