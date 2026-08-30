@@ -1,42 +1,44 @@
 # PolyU Canvas Course Fetch
 
-Download course files visible to your own Canvas account without creating an API token.
+Fetch course materials available to your PolyU Canvas account. No API token is required.
 
-The app opens a dedicated Chrome profile, lets you sign in normally, and reuses that login on later runs. It discovers files through multiple read-only routes:
+## Requirements
 
-- Modules and module items
-- Assignments and their descriptions/attachments
-- Pages
-- Announcements and discussions
-- Visible links on Canvas course pages
+- Google Chrome
+- [Node.js](https://nodejs.org/)
 
-It never bypasses Canvas permissions. Locked, unpublished, external-tool, DRM-protected, or otherwise inaccessible content is skipped.
+## Windows
 
-## Windows quick start
+1. Download or clone this repository.
+2. Double-click `fetch.bat`.
+3. Sign in to Canvas when prompted, then return to the terminal and press Enter.
 
-1. Install [Node.js](https://nodejs.org/) and Google Chrome.
-2. Download or clone this repository.
-3. Double-click `fetch.bat`.
-4. On the first run, sign in to Canvas in the Chrome window, then return to the terminal and press Enter.
+## macOS
 
-Files are saved inside the repository's `courses` folder by default. This folder contains only one folder per course and its materials. Copy `config.example.json` to `config.json` to change the Canvas URL or destination.
+1. Download or clone this repository.
+2. Double-click `fetch.command`.
+3. If blocked, right-click it and select **Open**.
+4. Sign in to Canvas when prompted, then return to Terminal and press Enter.
 
-## macOS quick start
+If needed, run `chmod +x fetch.command` once.
 
-1. Install [Node.js](https://nodejs.org/) and Google Chrome.
-2. Download or clone this repository.
-3. In Finder, double-click `fetch.command`.
-4. If macOS blocks the first launch, right-click `fetch.command`, choose **Open**, and confirm.
-5. On the first run, sign in to Canvas in Chrome, then return to Terminal and press Enter.
+## Structure
 
-If the file is not executable after downloading an archive, run `chmod +x fetch.command` once in Terminal.
+```text
+polyu-canvas-course-fetch/
+├── fetch.bat          # Windows launcher
+├── fetch.command      # macOS launcher
+├── courses/           # Generated locally; never pushed to Git
+│   └── Course name/
+│       └── Module name/
+│           └── Material files
+└── src/               # Fetcher source code
+```
 
-The `courses` folder is generated locally for each user and is excluded from Git. Course materials must never be committed or distributed through this repository.
+## Privacy and disclaimer
 
-## Privacy
-
-The reusable browser profile is stored under the current user's local application-data directory and is never placed in this repository. Do not share that profile. The tool does not ask for passwords or transmit cookies, course content, or analytics to the developer.
-
-## Limitations
-
-Canvas installations can disable individual API routes. This tool automatically tries several routes, but it can only save content the signed-in user can open. External platforms such as Panopto, Turnitin, publisher sites, and LTI tools are outside its scope.
+- Login data and course materials stay on your device and are not sent to the developer.
+- `courses/` is excluded from Git. Do not upload or redistribute course materials without permission.
+- The tool only accesses content available to the signed-in user and does not bypass Canvas permissions.
+- Locked content and external services such as Panopto, Turnitin, publisher sites, and LTI tools may not be fetched.
+- Use this tool at your own risk and follow PolyU policies and applicable copyright rules.
