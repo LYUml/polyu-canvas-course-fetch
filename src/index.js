@@ -29,8 +29,15 @@ function safeName(value) {
   return clean || '_unnamed_';
 }
 function log(message) {
-  const line = `${new Date().toLocaleString('zh-CN', { hour12: false })}  ${message}`;
-  console.log(line); fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
+  const line = `${new Date().toLocaleString('en-CA', { hour12: false })}  ${message}`;
+  fs.appendFileSync(LOG_FILE, line + '\n', 'utf8');
+}
+function progress(done, total) {
+  const width = 30;
+  const ratio = total ? done / total : 1;
+  const filled = Math.round(width * ratio);
+  const percent = Math.round(ratio * 100);
+  process.stdout.write(`\r[${'#'.repeat(filled)}${'-'.repeat(width - filled)}] ${percent}% (${done}/${total})`);
 }
 function shortError(error) {
   return String(error?.message || error || 'Unknown error').split(/\r?\n/, 1)[0].replace(/cookie:\s*.*/i, 'cookie: [redacted]');
@@ -99,8 +106,9 @@ async function main() {
     const courses = (await pages(context.request, `${BASE}/api/v1/courses?per_page=100`)).filter(c => c.name && !c.access_restricted_by_date);
     let downloaded = 0, skipped = 0, failed = 0;
     log(`Sync started: ${courses.length} accessible course(s)`);
+    progress(0, courses.length);
 
-    for (const course of courses) {
+    for (const [courseIndex, course] of courses.entries()) {
       const courseDir = path.join(DOWNLOAD_ROOT, safeName(course.name));
       fs.mkdirSync(courseDir, { recursive: true });
       log(`Course: ${course.name}`);
@@ -178,10 +186,20 @@ async function main() {
           log(`  Downloaded: ${name}`);
         } catch (e) { failed++; log(`  File failed ${item.id}: ${shortError(e)}`); }
       }
+      progress(courseIndex + 1, courses.length);
     }
     fs.writeFileSync(MANIFEST_FILE, JSON.stringify(manifest, null, 2), 'utf8');
     log(`Sync complete: ${downloaded} downloaded/updated, ${skipped} skipped, ${failed} failed`);
+    if (failed === 0) console.log(`\nSUCCESS`);
+    else {
+      console.log(`\nFAILED (${failed} file${failed === 1 ? '' : 's'})`);
+      process.exitCode = 1;
+    }
   } finally { await context.close(); }
 }
 
-main().catch(error => { log(`Sync aborted: ${shortError(error)}`); process.exitCode = 1; });
+main().catch(error => {
+  log(`Sync aborted: ${shortError(error)}`);
+  console.log('\nFAILED');
+  process.exitCode = 1;
+});
